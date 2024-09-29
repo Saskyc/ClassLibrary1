@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using Exiled.API.Features;
 using Exiled.Events.EventArgs;
@@ -61,19 +61,91 @@ namespace ClassLibrary1
 
         private void OnUsingItem(UsingItemEventArgs ev)
         {
-            // Track chemicals based on the item serial number
-            uint itemSerial = ev.Item.Serial; // The serial is used as the dictionary key
-
-            if (!ItemChemicals.ContainsKey(itemSerial))
+            // Check if the player is using an Adrenaline item
+            if (ev.Item.Type == ItemType.Adrenaline)
             {
-                ItemChemicals[itemSerial] = new List<string>();
-                Log.Info($"Initialized chemical list for item with serial {itemSerial}.");
+                ev.IsAllowed = false;
+                uint itemSerial = ev.Item.Serial;
+
+                // Check if the item has any chemicals
+                if (ItemChemicals.ContainsKey(itemSerial) && ItemChemicals[itemSerial].Count > 0)
+                {
+                    // Find the last chemical added to the item
+                    string lastChemical = GetLastChemicalBySerial(itemSerial);
+
+                    if (!string.IsNullOrEmpty(lastChemical))
+                    {
+                        // Try to apply effects from the Effects folder
+                        ApplyChemicalEffects(ev.Player, lastChemical);
+                    }
+                    else
+                    {
+                        ev.Player.ShowHint("No chemicals found in the Adrenaline.", 3);
+                    }
+                }
+                else
+                {
+                    ev.Player.ShowHint("No chemicals found in the Adrenaline.", 3);
+                }
+            }
+        }
+
+        // Method to apply effects based on the chemical name
+        private void ApplyChemicalEffects(Player player, string chemical)
+        {
+            // Path to the Effects folder
+            string effectsFolderPath = Path.Combine(Exiled.API.Features.Paths.Plugins, "Effects");
+
+            // Path to the specific effect file for the chemical
+            string effectFilePath = Path.Combine(effectsFolderPath, $"{chemical}.txt");
+
+            // Check if the effect file exists
+            if (!File.Exists(effectFilePath))
+            {
+                player.ShowHint($"You drank {chemical}", 5);
+                Class1.Instance.RemoveChemicalFromItem(player.CurrentItem.Serial, $"{chemical}");
+                return; // No file, no effects
+            }
+
+            try
+            {
+                // Read all lines (effects) from the effect file
+                var effects = File.ReadAllLines(effectFilePath).ToList();
+
+                // Apply each effect if it's a valid Exiled effect type
+                foreach (string effect in effects)
+                {
+                    ApplyDynamicEffectToPlayer(player, effect); // Dynamically apply the effect
+                }
+
+                // Inform the player that the effects have been applied
+                player.ShowHint($"You drank {chemical}", 5);
+                Class1.Instance.RemoveChemicalFromItem(player.CurrentItem.Serial, $"{chemical}");
+            }
+            catch (Exception ex)
+            {
+                Log.Error($"Error reading effect file for {chemical}: {ex.Message}");
+                player.ShowHint($"You drank {chemical}", 5);
+                Class1.Instance.RemoveChemicalFromItem(player.CurrentItem.Serial, $"{chemical}");
+            }
+        }
+
+        // Method to apply a dynamic Exiled effect to the player based on the effect name
+        private void ApplyDynamicEffectToPlayer(Player player, string effectName)
+        {
+            // Try to parse the effect name as an Exiled EffectType
+            if (Enum.TryParse(effectName, true, out Exiled.API.Enums.EffectType effectType))
+            {
+                // Enable the effect on the player for a default duration (e.g., 10 seconds)
+                player.EnableEffect(effectType, 10); // You can customize the duration as needed
+                Log.Info($"Applied effect: {effectType} to player {player.Nickname}");
             }
             else
             {
-                Log.Info($"Item {itemSerial} already has chemicals.");
+                Log.Warn($"Invalid effect type: {effectName} for player {player.Nickname}");
             }
         }
+
 
         private void OnTogglingNoclip(TogglingNoClipEventArgs ev)
         {
